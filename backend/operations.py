@@ -64,22 +64,23 @@ def weights_manual_cast(layer, x, skip_weight_dtype=False, skip_bias_dtype=False
     target_dtype = x.dtype
     target_device = x.device
 
-    if skip_weight_dtype:
-        weight_args = dict(device=target_device, non_blocking=non_blocking)
-    else:
-        weight_args = dict(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
+    with torch.no_grad():
+        if skip_weight_dtype:
+            weight_args = dict(device=target_device, non_blocking=non_blocking)
+        else:
+            weight_args = dict(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
 
-    if skip_bias_dtype:
-        bias_args = dict(device=target_device, non_blocking=non_blocking)
-    else:
-        bias_args = dict(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
+        if skip_bias_dtype:
+            bias_args = dict(device=target_device, non_blocking=non_blocking)
+        else:
+            bias_args = dict(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
 
-    if stream.should_use_stream():
-        with stream.stream_context()(stream.mover_stream):
+        if stream.should_use_stream():
+            with stream.stream_context()(stream.mover_stream):
+                weight, bias = get_weight_and_bias(layer, weight_args, bias_args, weight_fn=weight_fn, bias_fn=bias_fn)
+                signal = stream.mover_stream.record_event()
+        else:
             weight, bias = get_weight_and_bias(layer, weight_args, bias_args, weight_fn=weight_fn, bias_fn=bias_fn)
-            signal = stream.mover_stream.record_event()
-    else:
-        weight, bias = get_weight_and_bias(layer, weight_args, bias_args, weight_fn=weight_fn, bias_fn=bias_fn)
 
     return weight, bias, signal
 
@@ -500,10 +501,20 @@ def automatic_memory_management():
         torch.nn.Module.to = original_to
 
     start = time.perf_counter()
-    module_list = set(module_list)
+    module_list = list(set(module_list))
 
+    # Sort modules by memory usage
+    module_list = sorted(module_list, key=lambda m: memory_management.module_size(m), reverse=True)
+
+    # Get available GPU memory
+    available_memory = memory_management.get_free_memory(device)
+
+    # Move modules to CPU until available memory is sufficient
     for module in module_list:
-        module.cpu()
+        module_memory = memory_management.module_size(module)
+        if available_memory < 0:
+            module.cpu()
+            available_memory += module_memory
 
     memory_management.soft_empty_cache()
     end = time.perf_counter()
@@ -558,4 +569,3 @@ class DynamicSwapInstaller:
         for m in model.modules():
             DynamicSwapInstaller._uninstall_module(m)
         return
-

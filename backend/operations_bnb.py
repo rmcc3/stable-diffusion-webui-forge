@@ -25,11 +25,10 @@ def functional_dequantize_4bit(weight):
 
     if weight_original_device.type != 'cuda':
         weight = weight.cuda()
-
-    weight = dequantize_4bit(weight, quant_state=weight.quant_state, blocksize=weight.blocksize, quant_type=weight.quant_type)
-
-    if weight_original_device.type != 'cuda':
+        weight = dequantize_4bit(weight, quant_state=weight.quant_state, blocksize=weight.blocksize, quant_type=weight.quant_type)
         weight = weight.to(device=weight_original_device)
+    else:
+        weight = dequantize_4bit(weight, quant_state=weight.quant_state, blocksize=weight.blocksize, quant_type=weight.quant_type)
 
     return weight
 
@@ -72,8 +71,11 @@ class ForgeParams4bit(Params4bit):
 
     def to(self, *args, **kwargs):
         device, dtype, non_blocking, convert_to_format = torch._C._nn._parse_to(*args, **kwargs)
-        if device is not None and device.type == "cuda" and not self.bnb_quantized:
-            return self._quantize(device)
+        if device is not None and device.type == "cuda":
+            if not self.bnb_quantized:
+                return self._quantize(device)
+            else:
+                return self
         else:
             return ForgeParams4bit(
                 torch.nn.Parameter.to(self, device=device, dtype=dtype, non_blocking=non_blocking),
@@ -157,18 +159,21 @@ class ForgeLoader4Bit(torch.nn.Module):
 
     def reload_weight(self, weight):
         weight_original_device = weight.device
-        weight = ForgeParams4bit(
-            weight,
-            requires_grad=False,
-            compress_statistics=self.weight.compress_statistics,
-            blocksize=self.weight.blocksize,
-            quant_type=self.weight.quant_type,
-            quant_storage=self.weight.quant_storage,
-            bnb_quantized=False
-        )
-        if weight_original_device.type == 'cuda':
+        if isinstance(weight, ForgeParams4bit):
             weight = weight.to(weight_original_device)
         else:
-            weight = weight.cuda().to(weight_original_device)
+            weight = ForgeParams4bit(
+                weight,
+                requires_grad=False,
+                compress_statistics=self.weight.compress_statistics,
+                blocksize=self.weight.blocksize,
+                quant_type=self.weight.quant_type,
+                quant_storage=self.weight.quant_storage,
+                bnb_quantized=False
+            )
+            if weight_original_device.type == 'cuda':
+                weight = weight.to(weight_original_device)
+            else:
+                weight = weight.cuda().to(weight_original_device)
         self.weight = weight
         return self
