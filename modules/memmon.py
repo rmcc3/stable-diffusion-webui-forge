@@ -21,6 +21,8 @@ class MemUsageMonitor(threading.Thread):
         self.daemon = True
         self.run_flag = threading.Event()
         self.data = defaultdict(int)
+        self.data_lock = threading.Lock()
+        self.started_event = threading.Event()
 
         try:
             self.cuda_mem_get_info()
@@ -48,10 +50,12 @@ class MemUsageMonitor(threading.Thread):
                 continue
 
             self.data["min_free"] = self.cuda_mem_get_info()[0]
+            self.started_event.set()
 
             while self.run_flag.is_set():
                 free, total = self.cuda_mem_get_info()
-                self.data["min_free"] = min(self.data["min_free"], free)
+                with self.data_lock:
+                    self.data["min_free"] = min(self.data["min_free"], free)
 
                 time.sleep(1 / self.opts.memmon_poll_rate)
 
@@ -73,17 +77,19 @@ class MemUsageMonitor(threading.Thread):
         self.run_flag.set()
 
     def read(self):
+        self.started_event.wait()
         if not self.disabled:
             free, total = self.cuda_mem_get_info()
-            self.data["free"] = free
-            self.data["total"] = total
+            with self.data_lock:
+                self.data["free"] = free
+                self.data["total"] = total
 
-            torch_stats = torch.cuda.memory_stats(self.device)
-            self.data["active"] = torch_stats["active.all.current"]
-            self.data["active_peak"] = torch_stats["active_bytes.all.peak"]
-            self.data["reserved"] = torch_stats["reserved_bytes.all.current"]
-            self.data["reserved_peak"] = torch_stats["reserved_bytes.all.peak"]
-            self.data["system_peak"] = total - self.data["min_free"]
+                torch_stats = torch.cuda.memory_stats(self.device)
+                self.data["active"] = torch_stats["active.all.current"]
+                self.data["active_peak"] = torch_stats["active_bytes.all.peak"]
+                self.data["reserved"] = torch_stats["reserved_bytes.all.current"]
+                self.data["reserved_peak"] = torch_stats["reserved_bytes.all.peak"]
+                self.data["system_peak"] = total - self.data["min_free"]
 
         return self.data
 
