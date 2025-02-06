@@ -9,6 +9,9 @@ from bitsandbytes.functional import dequantize_4bit
 
 
 def functional_linear_4bits(x, weight, bias):
+    if x is None or not isinstance(x, torch.Tensor):
+        return None
+
     out = bnb.matmul_4bit(x, weight.t(), bias=bias, quant_state=weight.quant_state)
     out = out.to(x)
     return out
