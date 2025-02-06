@@ -2,6 +2,7 @@ import os
 import torch
 import logging
 import importlib
+import re
 
 import backend.args
 import huggingface_guess
@@ -276,19 +277,23 @@ def forge_loader(sd, additional_state_dicts=None):
         raise ValueError('Failed to recognize model type!')
     
     repo_name = estimated_config.huggingface_repo
+    if re.search(r"[~\$]|^\.\.", repo_name):
+        print(f"Skipping loading huggingface components due to potentially malicious repo_name: {repo_name}")
+        huggingface_components = {}
+    else:
 
-    local_path = os.path.join(dir_path, 'huggingface', repo_name)
-    config: dict = DiffusionPipeline.load_config(local_path)
-    huggingface_components = {}
-    for component_name, v in config.items():
-        if isinstance(v, list) and len(v) == 2:
-            lib_name, cls_name = v
-            component_sd = state_dicts.get(component_name, None)
-            component = load_huggingface_component(estimated_config, component_name, lib_name, cls_name, local_path, component_sd)
-            if component_sd is not None:
-                del state_dicts[component_name]
-            if component is not None:
-                huggingface_components[component_name] = component
+        local_path = os.path.join(dir_path, 'huggingface', repo_name)
+        config: dict = DiffusionPipeline.load_config(local_path)
+        huggingface_components = {}
+        for component_name, v in config.items():
+            if isinstance(v, list) and len(v) == 2:
+                lib_name, cls_name = v
+                component_sd = state_dicts.get(component_name, None)
+                component = load_huggingface_component(estimated_config, component_name, lib_name, cls_name, local_path, component_sd)
+                if component_sd is not None:
+                    del state_dicts[component_name]
+                if component is not None:
+                    huggingface_components[component_name] = component
 
     yaml_config = None
     yaml_config_prediction_type = None
