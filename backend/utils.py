@@ -1,6 +1,7 @@
 import gguf
 import torch
 import os
+import re
 import json
 import safetensors.torch
 import backend.misc.checkpoint_pickle
@@ -8,6 +9,9 @@ from backend.operations_gguf import ParameterGGUF
 
 
 def read_arbitrary_config(directory):
+    if not os.path.isabs(directory) or re.search(r"[~\$]|^\.\.", directory):
+        raise ValueError(f"Invalid directory path: {directory}")
+
     config_path = os.path.join(directory, 'config.json')
 
     if not os.path.exists(config_path):
