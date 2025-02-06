@@ -210,10 +210,11 @@ def attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
 
     if mem_required > mem_free_total:
         steps = 2 ** (math.ceil(math.log(mem_required / mem_free_total, 2)))
+        steps = min(steps, 32)  # Limit steps to 32 to prevent excessive splitting
         # print(f"Expected tensor size:{tensor_size/gb:0.1f}GB, cuda free:{mem_free_cuda/gb:0.1f}GB "
         #      f"torch free:{mem_free_torch/gb:0.1f} total:{mem_free_total/gb:0.1f} steps:{steps}")
 
-    if steps > 64:
+    if steps > 32:
         max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
         raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
                            f'Need: {mem_required / 64 / gb:0.1f}GB free, Have:{mem_free_total / gb:0.1f}GB free')
@@ -235,9 +236,17 @@ def attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
                 end = i + slice_size
                 if upcast:
                     with torch.autocast(enabled=False, device_type='cuda'):
-                        s1 = torch.einsum('b i d, b j d -> b i j', q[:, i:end].float(), k.float()) * scale
+                        try:
+                            s1 = torch.einsum('b i d, b j d -> b i j', q[:, i:end].float(), k.float()) * scale
+                        except memory_management.OOM_EXCEPTION as e:
+                            print("einsum OOM, switching to cpu")
+                            s1 = torch.einsum('b i d, b j d -> b i j', q[:, i:end].cpu().float(), k.cpu().float()).cuda() * scale
                 else:
-                    s1 = torch.einsum('b i d, b j d -> b i j', q[:, i:end], k) * scale
+                    try:
+                        s1 = torch.einsum('b i d, b j d -> b i j', q[:, i:end], k) * scale
+                    except memory_management.OOM_EXCEPTION as e:
+                        print("einsum OOM, switching to cpu")
+                        s1 = torch.einsum('b i d, b j d -> b i j', q[:, i:end].cpu(), k.cpu()).cuda() * scale
 
                 if mask is not None:
                     if len(mask.shape) == 2:
@@ -260,7 +269,7 @@ def attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
                     print("out of memory error, emptying cache and trying again")
                     continue
                 steps *= 2
-                if steps > 64:
+                if steps > 32:
                     raise e
                 print("out of memory error, increasing steps and trying again {}".format(steps))
             else:
