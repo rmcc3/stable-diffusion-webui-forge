@@ -26,8 +26,9 @@ class FIFOLock(object):
     def release(self):
         with self._inner_lock:
             if self._pending_threads:
-                release_event = self._pending_threads.popleft()
-                release_event.set()
+                if len(self._pending_threads) > 0:
+                    release_event = self._pending_threads.popleft()
+                    release_event.set()
 
             self._lock.release()
 
