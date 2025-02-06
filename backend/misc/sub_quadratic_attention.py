@@ -246,7 +246,8 @@ def efficient_dot_product_attention(
         return mask[:, chunk_idx:chunk_idx + chunk]
 
     summarize_chunk: SummarizeChunk = partial(_summarize_chunk, scale=scale, upcast_attention=upcast_attention)
-    summarize_chunk: SummarizeChunk = partial(checkpoint, summarize_chunk) if use_checkpoint else summarize_chunk
+    if use_checkpoint and torch.is_grad_enabled():
+        summarize_chunk: SummarizeChunk = partial(checkpoint, summarize_chunk)
     compute_query_chunk_attn: ComputeQueryChunkAttn = partial(
         _get_attention_scores_no_kv_chunking,
         scale=scale,
