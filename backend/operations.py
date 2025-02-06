@@ -52,6 +52,9 @@ def get_weight_and_bias(layer, weight_args=None, bias_args=None, weight_fn=None,
 
 
 def weights_manual_cast(layer, x, skip_weight_dtype=False, skip_bias_dtype=False, weight_fn=None, bias_fn=None):
+    if x is None or not isinstance(x, torch.Tensor):
+        return None, None, None
+
     weight, bias, signal = None, None, None
     non_blocking = True
 
