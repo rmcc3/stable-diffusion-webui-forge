@@ -115,16 +115,24 @@ def get_total_memory(dev=None, torch_total_too=False):
             mem_total = 1024 * 1024 * 1024  # TODO
             mem_total_torch = mem_total
         elif is_intel_xpu():
-            stats = torch.xpu.memory_stats(dev)
-            mem_reserved = stats['reserved_bytes.all.current']
-            mem_total_torch = mem_reserved
-            mem_total = torch.xpu.get_device_properties(dev).total_memory
+            try:
+                stats = torch.xpu.memory_stats(dev)
+                mem_reserved = stats['reserved_bytes.all.current']
+                mem_total_torch = mem_reserved
+                mem_total = torch.xpu.get_device_properties(dev).total_memory
+            except Exception:
+                mem_total = psutil.virtual_memory().total
+                mem_total_torch = mem_total
         else:
-            stats = torch.cuda.memory_stats(dev)
-            mem_reserved = stats['reserved_bytes.all.current']
-            _, mem_total_cuda = torch.cuda.mem_get_info(dev)
-            mem_total_torch = mem_reserved
-            mem_total = mem_total_cuda
+            try:
+                stats = torch.cuda.memory_stats(dev)
+                mem_reserved = stats['reserved_bytes.all.current']
+                _, mem_total_cuda = torch.cuda.mem_get_info(dev)
+                mem_total_torch = mem_reserved
+                mem_total = mem_total_cuda
+            except Exception:
+                mem_total = psutil.virtual_memory().total
+                mem_total_torch = mem_total
 
     if torch_total_too:
         return (mem_total, mem_total_torch)
