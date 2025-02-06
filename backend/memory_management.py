@@ -52,6 +52,8 @@ if args.directml is not None:
     if device_index < 0:
         directml_device = torch_directml.device()
     else:
+        if device_index > 10:
+            device_index = 0
         directml_device = torch_directml.device(device_index)
     print("Using directml with device: {}".format(torch_directml.device_name(device_index)))
 
