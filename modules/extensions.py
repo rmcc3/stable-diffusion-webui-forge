@@ -144,13 +144,16 @@ class Extension:
             return
 
         def read_from_repo():
-            with self.lock:
-                if self.have_info_from_repo:
-                    return
+            try:
+                with self.lock:
+                    if self.have_info_from_repo:
+                        return
 
-                self.do_read_info_from_repo()
+                    self.do_read_info_from_repo()
 
-                return self.to_dict()
+                    return self.to_dict()
+            finally:
+                pass
 
         try:
             d = cache.cached_data_for_file('extensions-git', self.name, os.path.join(self.path, ".git"), read_from_repo)
